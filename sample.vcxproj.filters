@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="src\A.cpp" />
+    <ClCompile Include="src\B.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\C.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="src\A.h" />
+    <ClInclude Include="src\node\B.h">
+      <Filter>src</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="src">
+      <UniqueIdentifier>{c2e175b4-d9f8-42f0-9de3-93f4ab814391}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\node">
+      <UniqueIdentifier>{de4e9c24-3b4d-4c3a-93d3-e39bcd9ffece}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>
