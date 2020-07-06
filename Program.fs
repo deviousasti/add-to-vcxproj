@@ -64,7 +64,6 @@ let main argv =
                         yield Path.GetRelativePath(root, file)
             }
             |> Seq.cache
-
         
         let project = Project.Load (Path.Combine(root, file))
         let groups = project.ItemGroups
@@ -98,7 +97,7 @@ let main argv =
         
         let diff a b = 
             let a, b = Seq.cache a, Seq.cache b
-            a |> Seq.except b |> Seq.toArray, b |> Seq.except a |> Seq.toArray
+            a |> Seq.except b, b |> Seq.except a
 
         let newIncludes, pruneIncludes = diff actualIncludes existingIncludes
         let newSources, pruneSources  = diff actualSources existingSources 
@@ -131,7 +130,7 @@ let main argv =
             |> mapNew (function SourceFile file -> fileFilter file |> Project.ClCompile | _ -> failwith "Invalid source") 
         
         let filters =
-            newFilters
+            if isFilter then newFilters else Seq.empty
             |> mapNew (function Filter path -> Project.Filter(path, Guid.NewGuid()) | _ -> failwith "Invalid filter")
 
         let files = new Project.ItemGroup(sources, includes, [||])
