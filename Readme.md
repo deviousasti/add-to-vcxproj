@@ -31,7 +31,7 @@ OPTIONS
 ```
 
 EXAMPLES
-------------------
+---------
 
 ```
 add-to-vcxproj --add src --to node.vcxproj
@@ -45,3 +45,11 @@ add-to-vcxproj --add src --add lib --to node.vcxproj
 ```
 
 Since a sync is performed, it is safe to repeatedly execute this command.
+
+INSTALLATION
+------------
+
+The easiest way to install this as a `dotnet cli` global tool is to run `install.ps1`
+
+
+
