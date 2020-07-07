@@ -28,13 +28,19 @@ type Directives =
         | IncludeItem i -> i.Include
         | SourceItem i -> i.Include
         | FilterItem i -> i.Include
-        | IncludeFile f | SourceFile f | Filter f -> f
-        
+        | IncludeFile f | SourceFile f | Filter f -> f        
     override this.Equals(b) =
         match b with
         | :? Directives as b -> b.Path = this.Path
         | _ -> false
     override this.GetHashCode() = this.Path.GetHashCode()
+    override this.ToString() = 
+        match this with
+        | IncludeFile _ | IncludeItem _ -> "Header "
+        | SourceFile _  | SourceItem _ -> "Source "
+        | FilterItem _  | Filter _ -> "Folder "
+        +
+        this.Path
 
 [<EntryPoint>]
 let main argv =
@@ -49,101 +55,120 @@ let main argv =
         let root =
             file |> cwdpath |> parent
 
-        printfn "Path relative to %s" root
+        printfn "Path relative to: %s" root
         
         let isFilter = (Path.GetExtension file) = ".filters"        
 
         let sourceExtensions = [| ".c"; ".cpp"; ".cc" |]
         let headerExtensions = [| ".h"; ".hpp"; ".tpp" |]
-
-        let allFiles =
-            seq {
-                for dir in dirs do
-                    let dir = cwdpath dir
-                    for file in Directory.EnumerateFiles(dir, "*.*", SearchOption.AllDirectories) do
-                        yield Path.GetRelativePath(root, file)
-            }
-            |> Seq.cache
-        
+       
         let project = Project.Load (Path.Combine(root, file))
         let groups = project.ItemGroups
+
+        let add (group: Project.ItemGroup) =
+            if not group.XElement.IsEmpty then
+                project.XElement.Add group.XElement        
+
         let save (file : string) =    
             // Reparse the XML, otherwise indented formatting doesn't happen
             let doc = Xml.Linq.XDocument.Parse (project.XElement.ToString())
             doc.Save file
-
-        let filesWith map extensions =
-            allFiles 
-            |> Seq.filter (fun file -> extensions |> Array.contains (Path.GetExtension file))
-            |> Seq.map map
-
-        let ofType map typeSel =
-            groups
-            |> Seq.collect typeSel
-            |> Seq.map map
-
-        let existingSources = ofType SourceItem (fun g -> g.ClCompiles)
-        let existingIncludes = ofType IncludeItem (fun g -> g.ClIncludes)
-        let existingFilters = ofType FilterItem (fun g -> g.Filters)
-
-        let actualIncludes = filesWith IncludeFile headerExtensions
-        let actualSources = filesWith SourceFile sourceExtensions 
-        let actualFilters = 
-            Seq.append actualIncludes actualSources 
-            |> Seq.map (fun d -> parent d.Path)
-            |> Seq.collect parents
-            |> Seq.distinct
-            |> Seq.map Filter
         
-        let diff a b = 
-            let a, b = Seq.cache a, Seq.cache b
-            a |> Seq.except b, b |> Seq.except a
+        let patch dir =
+            printfn "Looking in: %s" dir
 
-        let newIncludes, pruneIncludes = diff actualIncludes existingIncludes
-        let newSources, pruneSources  = diff actualSources existingSources 
-        let newFilters, pruneFilters  = diff actualFilters existingFilters
+            let allFiles =
+                seq {                
+                    let dir = cwdpath dir
+                    for file in Directory.EnumerateFiles(dir, "*.*", SearchOption.AllDirectories) do
+                        yield Path.GetRelativePath(root, file)
+                }
+                |> Seq.cache
 
-        // prune filters
-        Seq.concat [pruneIncludes; pruneSources; pruneFilters]
-        |> Seq.iter (fun item ->
-            let node = 
-                match item with
-                    | SourceItem node -> node.XElement
-                    | FilterItem node -> node.XElement
-                    | IncludeItem node -> node.XElement
-                    | other -> failwithf "Invalid %A" other
-            node.Remove()
-        )
+            let filesWith map extensions =
+                allFiles 
+                |> Seq.filter (fun file -> extensions |> Array.contains (Path.GetExtension file))
+                |> Seq.map map
 
-        let fileFilter (file : string) = 
-            file, if isFilter then Some (parent file) else None
+            let ofType map typeSel =
+                groups
+                |> Seq.collect typeSel
+                |> Seq.map map
+                |> Seq.filter (fun (f : Directives) -> f.Path.StartsWith dir)
+
+            let existingSources = ofType SourceItem (fun g -> g.ClCompiles)
+            let existingIncludes = ofType IncludeItem (fun g -> g.ClIncludes)
+            let existingFilters = ofType FilterItem (fun g -> g.Filters)
+
+            let actualIncludes = filesWith IncludeFile headerExtensions
+            let actualSources = filesWith SourceFile sourceExtensions 
+            let actualFilters = 
+                if isFilter then 
+                    Seq.append actualIncludes actualSources 
+                    |> Seq.map (fun d -> parent d.Path)
+                    |> Seq.collect parents
+                    |> Seq.distinct
+                    |> Seq.map Filter
+                else 
+                    Seq.empty
         
-        let mapNew map items = 
-            items |> Seq.map map |> Seq.toArray
+            let printdiff (incl, prune) =
+                Console.ForegroundColor <- ConsoleColor.DarkGreen
+                incl |> Seq.iter(fun i -> printfn "+ %s" (string i))
+                Console.ForegroundColor <- ConsoleColor.DarkRed
+                prune |> Seq.iter(fun i -> printfn "- %s" (string i))
+                Console.ForegroundColor <- ConsoleColor.White
 
-        let includes = 
-            newIncludes 
-            |> mapNew (function IncludeFile file -> fileFilter file |> Project.ClInclude | _ -> failwith "Invalid include")             
+            let diff a b = 
+                let a, b = Seq.cache a, Seq.cache b
+                let result = a |> Seq.except b |> Seq.cache, b |> Seq.except a |> Seq.cache
+                printdiff result
+                result
 
-        let sources =
-            newSources
-            |> mapNew (function SourceFile file -> fileFilter file |> Project.ClCompile | _ -> failwith "Invalid source") 
+            let newIncludes, pruneIncludes = diff actualIncludes existingIncludes
+            let newSources, pruneSources  = diff actualSources existingSources 
+            let newFilters, pruneFilters  = diff actualFilters existingFilters
+            
+            // prune filters
+            Seq.concat [pruneIncludes; pruneSources; pruneFilters]
+            |> Seq.iter (fun item ->
+                let node = 
+                    match item with
+                        | SourceItem node -> node.XElement
+                        | FilterItem node -> node.XElement
+                        | IncludeItem node -> node.XElement
+                        | other -> failwithf "Invalid %A" other
+                node.Remove()
+            )
+
+            let fileFilter (file : string) = 
+                file, if isFilter then Some (parent file) else None
         
-        let filters =
-            if isFilter then newFilters else Seq.empty
-            |> mapNew (function Filter path -> Project.Filter(path, Guid.NewGuid()) | _ -> failwith "Invalid filter")
+            let mapNew map items = 
+                items |> Seq.map map |> Seq.toArray
 
-        let files = new Project.ItemGroup(sources, includes, [||])
-        let folders = new Project.ItemGroup([||], [||], filters)
+            let includes = 
+                newIncludes 
+                |> mapNew (function IncludeFile file -> fileFilter file |> Project.ClInclude | _ -> failwith "Invalid include")             
 
-        let add (group: Project.ItemGroup) =
-            if not group.XElement.IsEmpty then
-                project.XElement.Add group.XElement
+            let sources =
+                newSources
+                |> mapNew (function SourceFile file -> fileFilter file |> Project.ClCompile | _ -> failwith "Invalid source") 
         
-        // add new items        
-        add files
-        add folders
+            let filters =
+                newFilters 
+                |> mapNew (function Filter path -> Project.Filter(path, Guid.NewGuid()) | _ -> failwith "Invalid filter")
+
+            let files = new Project.ItemGroup(sources, includes, [||])
+            let folders = new Project.ItemGroup([||], [||], filters)
+
+            // add new items        
+            add files
+            add folders
         
+        // patch all directories
+        dirs |> Seq.iter patch
+
         // replace original file
         save file
 
