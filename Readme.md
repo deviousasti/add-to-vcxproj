@@ -3,8 +3,8 @@ DESCRIPTION
 
 This is a command-line tool to recursively add files to a VC++ project.
 
-It takes in a list of folders to add, a project file, and recursively sync the files to the project.
-While new files are added, missing files are pruned.
+It takes in a list of folders to add, a project file, and recursively syncs the files to the project.
+New files are added, while missing files are pruned.
 It appends all changes to a new `ItemGroup` in the project file, so that git diffs are more manageable.
 
 It works both on `.vcxproj` and `.vcxproj.filters`. 
@@ -49,7 +49,7 @@ Since a sync is performed, it is safe to repeatedly execute this command.
 INSTALLATION
 ------------
 
-The easiest way to install this as a `dotnet cli` global tool is to run `install.ps1`
+The easiest way to install this as a `dotnet cli` global tool is to clone this repo, and run `install.ps1`
 
 
 
